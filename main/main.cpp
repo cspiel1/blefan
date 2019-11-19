@@ -11,7 +11,7 @@
  */
 
 #ifndef PROJECT_VER
-#define PROJECT_VER
+#define PROJECT_VER "???"
 #endif
 
 #ifndef BUILDNR
@@ -21,14 +21,17 @@
 #define TAG "blefan"
 
 
-#include "Arduino.h"
-#include "BLEDevice.h"
+#include <Arduino.h>
+#include <BLEAddress.h>
+#include <BLEDevice.h>
+#include <BLEUUID.h>
+#include <BLERemoteCharacteristic.h>
 
 #define LEDPIN 34
 #define FANPIN 17
 
 // The remote service we wish to connect to.
-static BLEUUID serviceUUID("00001816-0000-1000-8000-00805f9b34fb");
+static BLEUUID serviceUUID("00001818-0000-1000-8000-00805f9b34fb");
 // The characteristic of the remote service we are interested in.
 static BLEUUID charUUID("00002a5b-0000-1000-8000-00805f9b34fb");
 
@@ -39,7 +42,7 @@ static BLERemoteCharacteristic* pRemoteCharacteristic;
 
 bool ledstate = false;
 long ledperiod = 1000;
-long prev_led = -1;
+long prev_led = 0;
 
 double t0, t1;
 uint32_t revs0 = 0, revs1 = 0;
@@ -53,21 +56,16 @@ static void ble_handler(
 	bool isNotify) {
 
 
-	Serial.print("Notify callback for characteristic ");
-	Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
-	Serial.print(" of data length ");
-	Serial.print(length);
-	Serial.print(" data: ");
+	ESP_LOGI(TAG, "Notify callback for characteristic %s of data length %u"
+			" data:",
+			pBLERemoteCharacteristic->getUUID().toString().c_str(), length);
 	for (int i = 0; i < length; i++) {
 		Serial.print(pData[i]);
 	}
-	ESP_LOGI(TAG, );
 
 	uint8_t flags;
 	memcpy(&flags, pData, sizeof(flags));
 	int offset(sizeof(flags));
-
-	time_t abs_time = time(NULL);
 
 	// if speed present can be combo sensor or speed sensor only
 	if (flags & 1 ) {
@@ -93,10 +91,9 @@ static void ble_handler(
 				dt = t1 + (((double)0xFFFF/1024.0) - t0);
 
 			double drev = revs1 - revs0;
-			speed = drev * wheel_size * 0.001 / dt * 3.6;
+			double speed = drev * wheel_size * 0.001 / dt * 3.6;
 
-			Serial.print("Speed: ");
-			ESP_LOGI(TAG, speed);
+			ESP_LOGI(TAG, "Speed: %lf", speed);
 
 			ledperiod = speed > 0.1 ? (int) (1000. / speed) : 1000;
 		}
@@ -106,8 +103,7 @@ static void ble_handler(
 }
 
 bool connectToServer(BLEAddress pAddress) {
-	Serial.print("Forming a connection to ");
-	ESP_LOGI(TAG, pAddress.toString().c_str());
+	ESP_LOGI(TAG, "Forming a connection to %s", pAddress.toString().c_str());
 
 	BLEClient* pClient = BLEDevice::createClient();
 	ESP_LOGI(TAG, " - Created client");
@@ -119,8 +115,8 @@ bool connectToServer(BLEAddress pAddress) {
 	// Obtain a reference to the service we are after in the remote BLE server.
 	BLERemoteService* pRemoteService = pClient->getService(serviceUUID);
 	if (pRemoteService == nullptr) {
-	  Serial.print("Failed to find our service UUID: ");
-	  ESP_LOGI(TAG, serviceUUID.toString().c_str());
+	  ESP_LOGI(TAG, "Failed to find our service UUID: %s",
+			  serviceUUID.toString().c_str());
 	  return false;
 	}
 	ESP_LOGI(TAG, " - Found our service");
@@ -137,10 +133,11 @@ bool connectToServer(BLEAddress pAddress) {
 
 	// Read the value of the characteristic.
 	std::string value = pRemoteCharacteristic->readValue();
-	Serial.print("The characteristic value was: ");
-	ESP_LOGI(TAG, value.c_str());
+	ESP_LOGI(TAG, "The characteristic value was: %s", value.c_str());
 
 	pRemoteCharacteristic->registerForNotify(ble_handler);
+
+	return true;
 }
 
 
@@ -152,12 +149,13 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 	 * Called for each advertising BLE server.
 	 */
 	void onResult(BLEAdvertisedDevice advertisedDevice) {
-		Serial.print("BLE Advertised Device found: ");
-		ESP_LOGI(TAG, advertisedDevice.toString().c_str());
+		ESP_LOGI(TAG, "BLE Advertised Device found: %s",
+				advertisedDevice.toString().c_str());
 
 		// We have found a device, let us now see if it contains the service we are looking for.
 		if (advertisedDevice.haveServiceUUID() && advertisedDevice.getServiceUUID().equals(serviceUUID)) {
-			Serial.print("Found our device!  address: ");
+			ESP_LOGI(TAG, "Found our device!  address: %s",
+					advertisedDevice.getAddress().toString().c_str());
 			advertisedDevice.getScan()->stop();
 
 			pServerAddress = new BLEAddress(advertisedDevice.getAddress());
@@ -180,11 +178,12 @@ void updateStatusLed()
 	bool state = ledstate;
 
 	if (!ledperiod) {
-	} else if ((millis()-prev_led) > ledperiod) {
+	} else if ((millis() - prev_led) > ledperiod) {
 		state = !ledstate;
 		prev_led = millis();
-		digitalWrite(ONBOARDLED_PIN, state);
+		digitalWrite(LEDPIN, state);
 		ledstate = state;
+		ESP_LOGI(TAG, "LED=%d", ledstate);
 	}
 
 }
@@ -196,6 +195,8 @@ void initBLE()
 	pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
 	pBLEScan->setActiveScan(true);
 	pBLEScan->start(30);
+
+	ESP_LOGI(TAG, "Leaving initBLE.");
 }
 
 void checkConnection()
