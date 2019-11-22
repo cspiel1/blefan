@@ -43,6 +43,7 @@ static BLERemoteCharacteristic* pRemoteCharacteristic;
 bool ledstate = false;
 long ledperiod = 1000;
 long prev_led = 0;
+static long start_time = 0;
 
 double t0, t1;
 uint32_t revs0 = 0, revs1 = 0;
@@ -169,23 +170,30 @@ void initGpios() {
 	pinMode(LEDPIN, OUTPUT);
 	pinMode(FANPIN, OUTPUT);
 
-	digitalWrite(LEDPIN, 0);
-	digitalWrite(FANPIN, 0);
+	digitalWrite(LEDPIN, 1);
+	digitalWrite(FANPIN, 1);
+}
+
+void toggleLED()
+{
+	ledstate = !ledstate;
+	digitalWrite(LEDPIN, ledstate);
 }
 
 void updateStatusLed()
 {
-	bool state = ledstate;
-
 	if (!ledperiod) {
 	} else if ((millis() - prev_led) > ledperiod) {
-		state = !ledstate;
 		prev_led = millis();
-		digitalWrite(LEDPIN, state);
-		ledstate = state;
+		toggleLED();
 		ESP_LOGI(TAG, "LED=%d", ledstate);
 	}
 
+}
+
+void setLED(bool state)
+{
+	digitalWrite(LEDPIN, state);
 }
 
 void initBLE()
@@ -194,14 +202,16 @@ void initBLE()
 	BLEScan* pBLEScan = BLEDevice::getScan();
 	pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
 	pBLEScan->setActiveScan(true);
-	pBLEScan->start(30);
+	pBLEScan->start(10);
 
 	ESP_LOGI(TAG, "Leaving initBLE.");
 }
 
+
 void checkConnection()
 {
-	if (doConnect == true) {
+	if (doConnect && (millis() - start_time) > 5000) {
+		setLED(false);
 		if (connectToServer(*pServerAddress)) {
 			ESP_LOGI(TAG, "We are now connected to the BLE Server.");
 			connected = true;
@@ -214,6 +224,7 @@ void checkConnection()
 
 void setup(void) {
 	Serial.begin(115200);
+	start_time = millis();
 
 	ESP_LOGI(TAG,"\n##########################################################\n"\
 			"Starting version " PROJECT_VER " (Build " BUILDNR ") ...\n"\
