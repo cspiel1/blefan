@@ -31,7 +31,8 @@
 #define FANPIN 17
 
 // The remote service we wish to connect to.
-static BLEUUID serviceUUID("00001818-0000-1000-8000-00805f9b34fb");
+static BLEUUID deviceUUID("00001818-0000-1000-8000-00805f9b34fb");
+static BLEUUID cscService("00001816-0000-1000-8000-00805f9b34fb");
 // The characteristic of the remote service we are interested in.
 static BLEUUID charUUID("00002a5b-0000-1000-8000-00805f9b34fb");
 
@@ -56,13 +57,7 @@ static void ble_handler(
 	size_t length,
 	bool isNotify) {
 
-
-	ESP_LOGI(TAG, "Notify callback for characteristic %s of data length %u"
-			" data:",
-			pBLERemoteCharacteristic->getUUID().toString().c_str(), length);
-	for (int i = 0; i < length; i++) {
-		Serial.print(pData[i]);
-	}
+	ESP_LOGI(TAG, "Notify length %u",length);
 
 	uint8_t flags;
 	memcpy(&flags, pData, sizeof(flags));
@@ -98,7 +93,6 @@ static void ble_handler(
 
 			ledperiod = speed > 0.1 ? (int) (1000. / speed) : 1000;
 		}
-
 	}
 
 }
@@ -110,17 +104,22 @@ bool connectToServer(BLEAddress pAddress) {
 	ESP_LOGI(TAG, " - Created client");
 
 	// Connect to the remove BLE Server.
-	pClient->connect(pAddress);
-	ESP_LOGI(TAG, " - Connected to server");
-
-	// Obtain a reference to the service we are after in the remote BLE server.
-	BLERemoteService* pRemoteService = pClient->getService(serviceUUID);
-	if (pRemoteService == nullptr) {
-	  ESP_LOGI(TAG, "Failed to find our service UUID: %s",
-			  serviceUUID.toString().c_str());
+	if (!pClient->connect(pAddress)) {
+	  ESP_LOGW(TAG, "Failed to connect to server %s",
+			  pAddress.toString().c_str());
 	  return false;
 	}
-	ESP_LOGI(TAG, " - Found our service");
+
+	ESP_LOGI(TAG, " - STEP 2 - Connected to server");
+
+	// Obtain a reference to the service we are after in the remote BLE server.
+	BLERemoteService* pRemoteService = pClient->getService(cscService);
+	if (pRemoteService == nullptr) {
+	  ESP_LOGW(TAG, "Failed to find our service UUID: %s",
+			  cscService.toString().c_str());
+	  return false;
+	}
+	ESP_LOGI(TAG, " - STEP 3 - Found our service");
 
 
 	// Obtain a reference to the characteristic in the service of the remote BLE server.
@@ -130,7 +129,7 @@ bool connectToServer(BLEAddress pAddress) {
 			  charUUID.toString().c_str());
 	  return false;
 	}
-	ESP_LOGI(TAG, " - Found our characteristic");
+	ESP_LOGI(TAG, " - STEP 4 - Found our characteristic");
 
 	// Read the value of the characteristic.
 	std::string value = pRemoteCharacteristic->readValue();
@@ -154,8 +153,10 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 				advertisedDevice.toString().c_str());
 
 		// We have found a device, let us now see if it contains the service we are looking for.
-		if (advertisedDevice.haveServiceUUID() && advertisedDevice.getServiceUUID().equals(serviceUUID)) {
-			ESP_LOGI(TAG, "Found our device!  address: %s",
+		return;
+		if (advertisedDevice.haveServiceUUID() &&
+				advertisedDevice.getServiceUUID().equals(deviceUUID)) {
+			ESP_LOGI(TAG, "STEP 1 - Yessss! Found our device!  address: %s",
 					advertisedDevice.getAddress().toString().c_str());
 			advertisedDevice.getScan()->stop();
 
@@ -194,6 +195,7 @@ void updateStatusLed()
 void setLED(bool state)
 {
 	digitalWrite(LEDPIN, state);
+	ledperiod = 0;
 }
 
 void initBLE()
@@ -210,7 +212,7 @@ void initBLE()
 
 void checkConnection()
 {
-	if (doConnect && (millis() - start_time) > 5000) {
+	if (doConnect) {
 		setLED(false);
 		if (connectToServer(*pServerAddress)) {
 			ESP_LOGI(TAG, "We are now connected to the BLE Server.");
