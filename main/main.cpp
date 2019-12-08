@@ -26,6 +26,7 @@
 #include <BLEDevice.h>
 #include <BLEUUID.h>
 #include <BLERemoteCharacteristic.h>
+#include "driver/mcpwm.h"
 
 #define LEDPIN 32
 #define FANPIN 17
@@ -46,6 +47,9 @@ static TaskHandle_t led_thread;
 
 bool ledstate = false;
 long ledperiod = 1000;
+float pwmduty = 0.;
+float pwmduty_prev = 0.;
+
 long prev_led = 0;
 static long start_time = 0;
 
@@ -101,7 +105,11 @@ static void ble_handler(
 			ESP_LOGI(TAG, "t=%u t0=%lf t1=%lf revs=%u revs0=%u revs1=%u",
 					t, t0, t1, revs, revs0, revs1);
 
-			ledperiod = speed > 0.1 ? (int) (1000. / speed) : 1000;
+			ledperiod = speed > 1. ? (int) (1000. / speed) : 1000;
+			pwmduty = speed < 4. ? 0. :
+				(speed < 50. ? (float) speed * 2. : 100.);
+
+			ESP_LOGI(TAG, "pwmduty=%f", pwmduty);
 		}
 	}
 
@@ -189,6 +197,15 @@ void initGpios() {
 
 	digitalWrite(LEDPIN, 1);
 	digitalWrite(FANPIN, 1);
+
+    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, FANPIN);
+    mcpwm_config_t pwm_config;
+    pwm_config.frequency = 1000;    //frequency = 500Hz,
+    pwm_config.cmpr_a = 0;    //duty cycle of PWMxA = 0
+    pwm_config.cmpr_b = 0;    //duty cycle of PWMxb = 0
+    pwm_config.counter_mode = MCPWM_UP_COUNTER;
+    pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
+    mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config);
 }
 
 void toggleLED()
@@ -205,6 +222,15 @@ void updateStatusLed()
 		toggleLED();
 	}
 
+}
+
+void updatePWM()
+{
+	if (pwmduty != pwmduty_prev) {
+		pwmduty_prev = pwmduty;
+		mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, pwmduty);
+		mcpwm_set_duty_type(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);
+	}
 }
 
 void setLED(bool state)
@@ -252,6 +278,7 @@ void run_led(void* arg)
 {
 	while (1) {
 		updateStatusLed();
+		updatePWM();
 
 		vTaskDelay(10 / portTICK_PERIOD_MS);
 	}
