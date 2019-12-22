@@ -26,3 +26,5 @@ CXXFLAGS += -DBUILDNR=\"$(buildnr)\" -DPROJECT_VER=\"$(PROJECT_VER)\"
 
 include $(IDF_PATH)/make/project.mk
 
+deploy: $(APP_BIN)
+	scp $(APP_BIN) vcspiel:/var/www/share
