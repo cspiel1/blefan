@@ -221,80 +221,15 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 // 10ms = 1000 * 10 us
 void IRAM_ATTR zero_cross_int()
 {
-//    if (pwm_duty > 0) {
-//        digitalWrite(FANPIN, HIGH);
-//        if (pwm_duty < 90) {
-//            unsigned int ontime = 100 * pwm_duty;    // 1000 * 10 / 100 * pwm_duty
-//            delayMicroseconds(ontime);    // Off cycle
-//            digitalWrite(FANPIN, LOW);
-//        }
-//    }
-	if (pwm_duty > 0) {
+	if (pwm_duty > 5) {
 		unsigned int offtime = 100 * (50 - pwm_duty/2);
-		delayMicroseconds(offtime);    // Off cycle
+		if (offtime > 200)
+			delayMicroseconds(offtime);    // Off cycle
 		digitalWrite(FANPIN, HIGH);
-		if (pwm_duty < 90) {
-			delayMicroseconds(20);
-			digitalWrite(FANPIN, LOW);
-		}
+		delayMicroseconds(20);
+		digitalWrite(FANPIN, LOW);
 	}
 }
-
-struct qrow {
-	unsigned char h;
-	unsigned char l;
-};
-
-static struct qrow qtable[] = {
-	{0, 20}, // 0%
-	{2, 18}, // 10%
-	{2, 8},  // 20%
-	{6, 14}, // 30%
-	{4, 6},  // 40%
-	{4, 4},  // 50%
-	{6, 4},  // 60%
-	{14, 6}, // 70%
-	{8, 2},  // 80%
-	{18, 2}, // 90%
-	{20, 0}, // 100%
-};
-
-void IRAM_ATTR zero_cross_int2()
-{
-	unsigned char i = (pwm_duty + 5) / 10;
-	if (i > 10)
-		i = 10;
-
-	if (i == 0) {
-		if (zero_cnt != 255) {
-			digitalWrite(FANPIN, LOW);
-			zero_cnt = 255;
-		}
-	} else if (i < 10) {
-		if (zero_cnt == 255)
-			zero_cnt = 0;
-
-		if (zero_cnt == 0) {
-			digitalWrite(FANPIN, HIGH);
-			pwm_set = true;
-		} else if (zero_cnt == qtable[i].h) {
-			digitalWrite(FANPIN, LOW);
-			pwm_set = false;
-			zero_cnt = qtable[i].l;
-		}
-
-		if (pwm_set)
-			zero_cnt++;
-		else
-			zero_cnt--;
-	} else if (i >= 10) {
-		if (zero_cnt != 255) {
-			digitalWrite(FANPIN, HIGH);
-			zero_cnt = 255;
-		}
-	}
-}
-
 
 void initGpios() {
 	pinMode(LEDPIN, OUTPUT);
